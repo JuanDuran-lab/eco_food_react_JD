@@ -3,7 +3,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBN8QJd-92LEKgZXCZDrZJPtrPZLOAGT4",
+  apiKey: "AIzaSyBN8QJGd-92LEKgZXCZDrZJPtrPZLOAGT4",
   authDomain: "eco-food-fab2f.firebaseapp.com",
   projectId: "eco-food-fab2f",
   storageBucket: "eco-food-fab2f.appspot.com",

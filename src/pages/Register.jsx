@@ -25,15 +25,12 @@ try {
 
   const cred = await createUserWithEmailAndPassword(auth, email, password);
 
-  // 👉 Enviar correo de verificación
   await sendEmailVerification(cred.user);
   Swal.fire(
-    "Revisa tu correo",
-    "Te enviamos un email de verificación. Debes validarlo antes de iniciar sesión.",
-    "info"
-  );
-
-  // 👉 Guardar datos en Firestore
+  "Revisa tu correo",
+  "Te enviamos un email de verificación. Debes validarlo antes de iniciar sesión.",
+  "info"
+).then(async () => {
   await saveUserData(cred.user.uid, {
     nombre,
     tipo,
@@ -43,10 +40,12 @@ try {
     telefono
   });
 
-  navigate("/login");
+  navigate("/login"); 
+});
 
 } catch (error) {
-  Swal.fire("Error", "No se pudo registrar", "error");
+  console.error("Error en el registro:", error);
+  Swal.fire("Error", error.message, "error");
 }
 }
 return (
@@ -60,7 +59,7 @@ setNombre(e.target.value)} required />
 </div>
 <div className="mb-3">
 <label className="form-label">Correo</label>
-<input type="email" className="form-control" value={email} onChange={(e) =>
+<input type="email" className="form-control" value={email} onChange={(e) => 
 setEmail(e.target.value)} required />
 </div>
 <div className="mb-3">
