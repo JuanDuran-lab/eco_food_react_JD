@@ -11,7 +11,11 @@ const firebaseConfig = {
   appId: "1:147803103451:web:668c8ac8f9d819b1506cfe"
 };
 
+// Instancia principal
 const app = initializeApp(firebaseConfig);
-
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Instancia secundaria (para registrar sin cerrar sesión admin)
+const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+export const secondaryAuth = getAuth(secondaryApp);

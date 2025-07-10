@@ -1,12 +1,18 @@
 import { useState, useEffect } from "react";
-import { db } from "../../services/firebase";
+import { db, auth } from "../../services/firebase";
 import {
   collection,
   getDocs,
   doc,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  setDoc,
 } from "firebase/firestore";
+import {
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+} from "firebase/auth";
+import { secondaryAuth } from "../../services/firebase";
 import Swal from "sweetalert2";
 
 export default function AdminAdministradores() {
@@ -15,14 +21,12 @@ export default function AdminAdministradores() {
   const [modoEdicion, setModoEdicion] = useState(false);
   const [idEditando, setIdEditando] = useState(null);
   const [form, setForm] = useState({ nombre: "", email: "" });
-
-  const handleBusquedaChange = (e) => {
-    setBusqueda(e.target.value);
-  };
-
-  const adminsFiltrados = admins.filter((admin) =>
-    admin.nombre.toLowerCase().startsWith(busqueda.toLowerCase())
-  );
+  const [showModal, setShowModal] = useState(false);
+  const [nuevoAdmin, setNuevoAdmin] = useState({
+    nombre: "",
+    email: "",
+    password: "",
+  });
 
   const fetchAdmins = async () => {
     const snapshot = await getDocs(collection(db, "usuarios"));
@@ -32,9 +36,20 @@ export default function AdminAdministradores() {
     setAdmins(lista);
   };
 
-  const handleDelete = async (id, esPrincipal) => {
+  const handleDelete = async (id, esPrincipal, email) => {
+    const currentUser = auth.currentUser;
+
     if (esPrincipal) {
-      Swal.fire("Error", "No puedes eliminar al administrador principal", "error");
+      Swal.fire(
+        "Error",
+        "No puedes eliminar al administrador principal",
+        "error"
+      );
+      return;
+    }
+
+    if (email === currentUser.email) {
+      Swal.fire("Error", "No puedes eliminar tu propia cuenta", "error");
       return;
     }
 
@@ -64,24 +79,75 @@ export default function AdminAdministradores() {
     setIdEditando(admin.id);
   };
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
-
   const handleUpdate = async (e) => {
     e.preventDefault();
     if (!form.nombre || !form.email) return;
 
-    await updateDoc(doc(db, "usuarios", idEditando), form);
+    await updateDoc(doc(db, "usuarios", idEditando), {
+      nombre: form.nombre,
+    });
+
     setModoEdicion(false);
     setIdEditando(null);
     setForm({ nombre: "", email: "" });
     fetchAdmins();
   };
 
+  const registrarAdmin = async () => {
+    const { nombre, email, password } = nuevoAdmin;
+
+    if (!nombre || !email || !password) {
+      Swal.fire("Error", "Completa todos los campos", "error");
+      return;
+    }
+
+    const passRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/;
+    if (!passRegex.test(password)) {
+      Swal.fire(
+        "Error",
+        "La contraseña debe tener mínimo 6 caracteres, con letras y números",
+        "error"
+      );
+      return;
+    }
+
+    try {
+      const cred = await createUserWithEmailAndPassword(
+        secondaryAuth,
+        email,
+        password
+      );
+      await sendEmailVerification(cred.user);
+
+      await setDoc(doc(db, "usuarios", cred.user.uid), {
+        nombre,
+        email,
+        tipo: "admin",
+      });
+
+      await secondaryAuth.signOut();
+
+      Swal.fire(
+        "Administrador creado",
+        "Se envió un correo de verificación",
+        "success"
+      );
+      setShowModal(false);
+      setNuevoAdmin({ nombre: "", email: "", password: "" });
+      fetchAdmins();
+    } catch (error) {
+      console.error("Error creando admin:", error);
+      Swal.fire("Error", error.message, "error");
+    }
+  };
+
   useEffect(() => {
     fetchAdmins();
   }, []);
+
+  const adminsFiltrados = admins.filter((admin) =>
+    admin.nombre.toLowerCase().startsWith(busqueda.toLowerCase())
+  );
 
   return (
     <div className="container mt-4">
@@ -93,7 +159,7 @@ export default function AdminAdministradores() {
           placeholder="Buscar administrador por nombre..."
           className="form-control"
           value={busqueda}
-          onChange={handleBusquedaChange}
+          onChange={(e) => setBusqueda(e.target.value)}
         />
       </div>
 
@@ -105,7 +171,7 @@ export default function AdminAdministradores() {
               type="text"
               name="nombre"
               value={form.nombre}
-              onChange={handleChange}
+              onChange={(e) => setForm({ ...form, nombre: e.target.value })}
               className="form-control"
               placeholder="Nombre"
               required
@@ -116,10 +182,8 @@ export default function AdminAdministradores() {
               type="email"
               name="email"
               value={form.email}
-              onChange={handleChange}
               className="form-control"
-              placeholder="Correo"
-              required
+              disabled
             />
           </div>
           <button type="submit" className="btn btn-success">
@@ -127,6 +191,14 @@ export default function AdminAdministradores() {
           </button>
         </form>
       )}
+
+      <button
+        className="btn btn-primary mb-3"
+        onClick={() => setShowModal(true)}
+      >
+        Nuevo Administrador
+      </button>
+
       <ul className="list-group mt-3">
         {adminsFiltrados.map((admin) => (
           <li
@@ -146,7 +218,9 @@ export default function AdminAdministradores() {
               </button>
               <button
                 className="btn btn-danger btn-sm"
-                onClick={() => handleDelete(admin.id, admin.esPrincipal)}
+                onClick={() =>
+                  handleDelete(admin.id, admin.esPrincipal, admin.email)
+                }
               >
                 Eliminar
               </button>
@@ -154,7 +228,65 @@ export default function AdminAdministradores() {
           </li>
         ))}
       </ul>
+
+      {/* Modal */}
+      {showModal && (
+        <div className="modal d-block" tabIndex="-1">
+          <div className="modal-dialog">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Registrar Nuevo Administrador</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <input
+                  className="form-control mb-2"
+                  placeholder="Nombre"
+                  value={nuevoAdmin.nombre}
+                  onChange={(e) =>
+                    setNuevoAdmin({ ...nuevoAdmin, nombre: e.target.value })
+                  }
+                />
+                <input
+                  className="form-control mb-2"
+                  placeholder="Correo"
+                  value={nuevoAdmin.email}
+                  onChange={(e) =>
+                    setNuevoAdmin({ ...nuevoAdmin, email: e.target.value })
+                  }
+                />
+                <input
+                  type="password"
+                  className="form-control mb-2"
+                  placeholder="Contraseña"
+                  value={nuevoAdmin.password}
+                  onChange={(e) =>
+                    setNuevoAdmin({
+                      ...nuevoAdmin,
+                      password: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="modal-footer">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowModal(false)}
+                >
+                  Cancelar
+                </button>
+                <button className="btn btn-success" onClick={registrarAdmin}>
+                  Registrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

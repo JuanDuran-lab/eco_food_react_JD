@@ -21,7 +21,12 @@ export function AuthProvider({ children }) {
         const snap = await getDoc(ref);
 
         if (snap.exists()) {
-          setUserData(snap.data()); 
+          setUserData({
+  ...snap.data(),
+  uid: firebaseUser.uid,  // por si lo necesitas
+  docId: snap.id          // ⚠️ ID real del documento Firestore
+});
+ 
         } else {
           setUserData(null);
         }

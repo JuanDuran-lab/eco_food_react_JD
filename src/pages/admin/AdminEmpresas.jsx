@@ -1,158 +1,229 @@
 import { useState, useEffect } from "react";
-import { db } from "../../services/firebase";
+import { Link } from "react-router-dom";
 import Swal from "sweetalert2";
 import {
-  collection,
-  addDoc,
-  getDocs,
-  doc,
-  deleteDoc,
-  setDoc
-} from "firebase/firestore";
+  getEmpresas,
+  registrarEmpresaConAuth,
+  updateEmpresa,
+  deleteEmpresa,
+} from "../../services/firebaseEmpresa";
 
 export default function AdminEmpresas() {
   const [empresas, setEmpresas] = useState([]);
+  const [editandoId, setEditandoId] = useState(null);
   const [form, setForm] = useState({
-    nombre: "",
-    rut: "",
+    nombreEmpresa: "",
+    rutEmpresa: "",
+    razonSocial: "",
     direccion: "",
     comuna: "",
     email: "",
-    telefono: ""
+    telefono: "",
+    password: ""
   });
-  const [editandoId, setEditandoId] = useState(null);
   const [mostrarProductos, setMostrarProductos] = useState(null);
-
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
-
-  const fetchEmpresas = async () => {
-    const snapshot = await getDocs(collection(db, "empresas"));
-    const lista = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    setEmpresas(lista);
-  };
+  const [busqueda, setBusqueda] = useState("");
 
   const validarRut = (rut) => /^[0-9]{7,8}-[0-9Kk]$/.test(rut);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const validarCampos = () => {
+    const correoRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const passRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/;
 
-    if (!validarRut(form.rut)) {
-      alert("RUT inválido. Usa el formato 12345678-K");
-      return;
+    if (form.nombreEmpresa.length < 3 || form.nombreEmpresa.length > 100) {
+      Swal.fire("Error", "El nombre debe tener entre 3 y 100 caracteres", "error");
+      return false;
     }
 
-    if (!/\S+@\S+\.\S+/.test(form.email)) {
-      alert("Correo electrónico inválido");
-      return;
+    if (!validarRut(form.rutEmpresa)) {
+      Swal.fire("Error", "RUT inválido. Ej: 12345678-9", "error");
+      return false;
     }
 
-    if (editandoId) {
-      await setDoc(doc(db, "empresas", editandoId), form);
-      Swal.fire("Actualizado", "Empresa editada correctamente", "success");
-      setEditandoId(null);
-    } else {
-      await addDoc(collection(db, "empresas"), form);
-      Swal.fire("Creada", "Empresa agregada correctamente", "success");
+    if (!correoRegex.test(form.email)) {
+      Swal.fire("Error", "Correo inválido", "error");
+      return false;
     }
 
-    setForm({
-      nombre: "",
-      rut: "",
-      direccion: "",
-      comuna: "",
-      email: "",
-      telefono: ""
-    });
-    fetchEmpresas();
+    if (!editandoId && !passRegex.test(form.password)) {
+      Swal.fire("Error", "Contraseña débil. Usa letras y números (mín. 6)", "error");
+      return false;
+    }
+
+    if (form.direccion.length < 5 || form.direccion.length > 200) {
+      Swal.fire("Error", "Dirección debe tener entre 5 y 200 caracteres", "error");
+      return false;
+    }
+
+    if (form.comuna.length < 3 || form.comuna.length > 100) {
+      Swal.fire("Error", "Comuna inválida", "error");
+      return false;
+    }
+
+    if (form.telefono && !/^\d{7,15}$/.test(form.telefono)) {
+      Swal.fire("Error", "Teléfono inválido", "error");
+      return false;
+    }
+
+    return true;
   };
 
-  const handleDelete = async (id) => {
+  const cargarEmpresas = async () => {
+    const data = await getEmpresas();
+    setEmpresas(data);
+  };
+
+  const guardar = async (e) => {
+    e.preventDefault();
+    if (!validarCampos()) return;
+
+    try {
+      if (editandoId) {
+        await updateEmpresa(editandoId, { ...form, tipo: "empresa" });
+        Swal.fire("Actualizado", "Empresa editada correctamente", "success");
+      } else {
+        await registrarEmpresaConAuth(form);
+        Swal.fire(
+          "Empresa registrada",
+          "Se envió un correo de verificación. La empresa debe validarlo antes de iniciar sesión.",
+          "info"
+        );
+      }
+
+      setForm({
+        nombreEmpresa: "",
+        rutEmpresa: "",
+        razonSocial: "",
+        direccion: "",
+        comuna: "",
+        email: "",
+        telefono: "",
+        password: ""
+      });
+      setEditandoId(null);
+      cargarEmpresas();
+    } catch (error) {
+      console.error(error);
+      Swal.fire("Error", "No se pudo guardar la empresa", "error");
+    }
+  };
+
+  const eliminar = async (id) => {
     const confirm = await Swal.fire({
-      title: "¿Estás seguro?",
-      text: "Esta acción eliminará la empresa.",
+      title: "¿Eliminar empresa?",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonText: "Sí, eliminar",
-      cancelButtonText: "Cancelar"
+      confirmButtonText: "Sí",
     });
 
     if (confirm.isConfirmed) {
-      await deleteDoc(doc(db, "empresas", id));
-      fetchEmpresas();
+      await deleteEmpresa(id);
+      cargarEmpresas();
     }
   };
 
-  const handleEdit = (empresa) => {
+  const editar = (empresa) => {
     setForm({
-      nombre: empresa.nombre,
-      rut: empresa.rut,
+      nombreEmpresa: empresa.nombreEmpresa,
+      rutEmpresa: empresa.rutEmpresa,
+      razonSocial: empresa.razonSocial,
       direccion: empresa.direccion,
       comuna: empresa.comuna,
       email: empresa.email,
-      telefono: empresa.telefono
+      telefono: empresa.telefono,
+      password: "" // ⚠️ No se puede mostrar ni modificar la contraseña
     });
     setEditandoId(empresa.id);
   };
 
   useEffect(() => {
-    fetchEmpresas();
+    cargarEmpresas();
   }, []);
+
+const empresasFiltradas = empresas.filter((e) =>
+  e.nombreEmpresa.toLowerCase().includes(busqueda.toLowerCase()) ||
+  e.rutEmpresa.toLowerCase().includes(busqueda.toLowerCase())
+);
 
   return (
     <div className="container mt-4">
-      <h2>{editandoId ? "Editar Empresa" : "Crear Empresa"}</h2>
-      <form onSubmit={handleSubmit} className="mb-4">
+      <h2>{editandoId ? "Editar Empresa" : "Registrar Nueva Empresa"}</h2>
+      <form onSubmit={guardar} className="mb-4">
         {[
-          { name: "nombre", label: "Nombre" },
-          { name: "rut", label: "RUT" },
+          { name: "nombreEmpresa", label: "Nombre Empresa" },
+          { name: "rutEmpresa", label: "RUT Empresa" },
+          { name: "razonSocial", label: "Razón Social" },
           { name: "direccion", label: "Dirección" },
           { name: "comuna", label: "Comuna" },
-          { name: "email", label: "Email", type: "email" },
+          { name: "email", label: "Correo", type: "email" },
           { name: "telefono", label: "Teléfono", type: "tel" }
         ].map(({ name, label, type = "text" }) => (
           <div className="mb-3" key={name}>
             <label className="form-label">{label}</label>
             <input
-              type={type}
-              name={name}
-              value={form[name]}
-              onChange={handleChange}
-              className="form-control"
-              required={name !== "telefono"}
-              pattern={name === "telefono" ? "[0-9]+" : undefined}
-            />
+  type={type}
+  name={name}
+  className="form-control"
+  value={form[name]}
+  onChange={(e) => setForm({ ...form, [name]: e.target.value })}
+  required={name !== "telefono"}
+  maxLength={100}
+  disabled={editandoId && (name === "email" || name === "rutEmpresa")}
+/>
+
           </div>
         ))}
 
+        {!editandoId && (
+          <div className="mb-3">
+            <label className="form-label">Contraseña</label>
+            <input
+              type="password"
+              name="password"
+              className="form-control"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              required
+              maxLength={100}
+            />
+          </div>
+        )}
+
         <button type="submit" className="btn btn-primary">
-          {editandoId ? "Actualizar Empresa" : "Agregar Empresa"}
+          {editandoId ? "Actualizar" : "Registrar"}
         </button>
       </form>
 
+<input
+  type="text"
+  className="form-control mb-3"
+  placeholder="Buscar por nombre o RUT..."
+  value={busqueda}
+  onChange={(e) => setBusqueda(e.target.value)}
+/>
+
+
       <h3>Empresas Registradas</h3>
       <ul className="list-group">
-        {empresas.map((empresa) => (
+        {empresasFiltradas.map((empresa) => (
           <li key={empresa.id} className="list-group-item">
             <div className="d-flex justify-content-between align-items-center">
-              <span>{empresa.nombre} - {empresa.rut}</span>
+              <span>{empresa.nombreEmpresa} - {empresa.rutEmpresa}</span>
               <div>
-                <button
-                  className="btn btn-secondary btn-sm me-2"
-                  onClick={() => setMostrarProductos(empresa.id)}
-                >
-                  Ver productos
-                </button>
-                <button
-                  className="btn btn-warning btn-sm me-2"
-                  onClick={() => handleEdit(empresa)}
-                >
-                  Editar
-                </button>
+               <Link to={`/admin/productos-empresa/${empresa.id}`} className="btn btn-secondary btn-sm me-2">
+  Ver productos
+</Link>
+
+<button
+  className="btn btn-warning btn-sm me-2"
+  onClick={() => editar(empresa)}
+>
+  Editar
+</button>
+
                 <button
                   className="btn btn-danger btn-sm"
-                  onClick={() => handleDelete(empresa.id)}
+                  onClick={() => eliminar(empresa.id)}
                 >
                   Eliminar
                 </button>
